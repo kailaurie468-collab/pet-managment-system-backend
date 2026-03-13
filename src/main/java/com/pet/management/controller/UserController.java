@@ -19,6 +19,10 @@ public class UserController {
 
     @PostMapping
     public User createUser(@RequestBody User user) {
+        // 校验用户名是否已存在
+        if (userService.findByUsername(user.getUsername()) != null) {
+            throw new RuntimeException("用户名 '" + user.getUsername() + "' 已存在，请更换一个哦 🐾");
+        }
         // 对密码进行 BCrypt 加密后再存库
         user.setPassword(passwordEncoder.encode(user.getPassword()));
         userService.save(user);
@@ -26,7 +30,19 @@ public class UserController {
     }
 
     @GetMapping
-    public List<User> getAllUsers() {
+    public List<User> getAllUsers(
+            @RequestParam(required = false) String name,
+            @RequestParam(required = false) String address,
+            @RequestParam(required = false) String identCard) {
+        if ((name != null && !name.isEmpty()) || 
+            (address != null && !address.isEmpty()) || 
+            (identCard != null && !identCard.isEmpty())) {
+            return userService.lambdaQuery()
+                    .like(name != null && !name.isEmpty(), User::getName, name)
+                    .like(address != null && !address.isEmpty(), User::getAddress, address)
+                    .like(identCard != null && !identCard.isEmpty(), User::getIdentCard, identCard)
+                    .list();
+        }
         return userService.list();
     }
 

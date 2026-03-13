@@ -5,19 +5,21 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Data;
-
 import java.util.Date;
 
 @Data
-@TableName("service_record")
-public class ServiceRecord {
+@TableName("vaccine_record")
+public class VaccineRecord {
     @TableId(type = IdType.AUTO)
     private Long id;
     private Long petId;
-    private String serviceId;
-    private Long doctorId;
+    private String vaccineName;
+    
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm", timezone = "Asia/Shanghai")
-    private Date serviceDate;
-    private Double amount;
+    private Date vaccineDate;
+    
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm", timezone = "Asia/Shanghai")
+    private Date nextDueDate;
+    
     private String notes;
 }

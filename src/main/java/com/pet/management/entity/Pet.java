@@ -17,4 +17,6 @@ public class Pet {
     private String breed;
     private Long ownerId;
     private String description;
+    private String photo;
+    private Integer isNeutered;
 }
