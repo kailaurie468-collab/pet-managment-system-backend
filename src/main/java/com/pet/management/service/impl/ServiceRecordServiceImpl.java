@@ -6,18 +6,22 @@ import com.pet.management.entity.Doctor;
 import com.pet.management.entity.HealthRecord;
 import com.pet.management.entity.Service;
 import com.pet.management.entity.ServiceRecord;
+import com.pet.management.entity.VaccineRecord;
 import com.pet.management.mapper.ServiceRecordMapper;
 import com.pet.management.service.DoctorService;
 import com.pet.management.service.HealthRecordService;
 import com.pet.management.service.ServiceRecordService;
 import com.pet.management.service.ServiceService;
+import com.pet.management.service.VaccineRecordService;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import lombok.extern.slf4j.Slf4j;
 
 import java.util.Date;
 import java.util.List;
 import java.util.Random;
 
+@Slf4j
 @org.springframework.stereotype.Service
 public class ServiceRecordServiceImpl extends ServiceImpl<ServiceRecordMapper, ServiceRecord>
         implements ServiceRecordService {
@@ -30,6 +34,9 @@ public class ServiceRecordServiceImpl extends ServiceImpl<ServiceRecordMapper, S
 
     @Autowired
     private HealthRecordService healthRecordService;
+
+    @Autowired
+    private VaccineRecordService vaccineRecordService;
 
     @Override
     public boolean save(ServiceRecord entity) {
@@ -44,25 +51,52 @@ public class ServiceRecordServiceImpl extends ServiceImpl<ServiceRecordMapper, S
 
         boolean saved = super.save(entity);
 
-        // “医疗”检查联动逻辑
+        // 联动逻辑：处理多项服务
         if (saved && entity.getServiceId() != null) {
-            Service currentService = serviceService.getById(entity.getServiceId());
-            if (currentService != null && "医疗".equals(currentService.getCategory())) {
-                HealthRecord hr = new HealthRecord();
-                hr.setPetId(entity.getPetId());
-                hr.setType("treatment"); // 根据业务固定为 treatment，或者复用检查类型
-                hr.setContent("执行医疗服务: " + currentService.getName());
-                hr.setRecordDate(entity.getServiceDate() != null ? entity.getServiceDate() : new Date());
-                hr.setNotes(entity.getNotes());
+            String[] serviceIds = entity.getServiceId().split(",");
+            for (String sIdStr : serviceIds) {
+                try {
+                    Long sId = Long.parseLong(sIdStr.trim());
+                    Service currentService = serviceService.getById(sId);
+                    if (currentService == null) continue;
 
-                // 设置医生名字
-                if (entity.getDoctorId() != null) {
-                    Doctor doc = doctorService.getById(entity.getDoctorId());
-                    if (doc != null) {
-                        hr.setDoctor(doc.getName());
+                    // 1. “医疗”检查联动逻辑 (健康记录)
+                    if ("医疗".equals(currentService.getCategory())) {
+                        HealthRecord hr = new HealthRecord();
+                        hr.setPetId(entity.getPetId());
+                        hr.setType("医疗");
+                        hr.setContent("执行医疗服务: " + currentService.getName());
+                        hr.setRecordDate(entity.getServiceDate() != null ? entity.getServiceDate() : new Date());
+                        hr.setNotes(entity.getNotes());
+
+                        if (entity.getDoctorId() != null) {
+                            Doctor doc = doctorService.getById(entity.getDoctorId());
+                            if (doc != null) {
+                                hr.setDoctor(doc.getName());
+                            }
+                        }
+                        healthRecordService.save(hr);
                     }
+
+                    // 2. “疫苗”识别联动逻辑 (疫苗记录)
+                    if (currentService.getName() != null && currentService.getName().contains("疫苗")) {
+                        VaccineRecord vr = new VaccineRecord();
+                        vr.setPetId(entity.getPetId());
+                        vr.setVaccineName(currentService.getName());
+                        vr.setVaccineDate(entity.getServiceDate() != null ? entity.getServiceDate() : new Date());
+                        
+                        // 预设计算：如果是年次接种（如含有“狂犬”或“疫苗”通用），默认一年后复种
+                        java.util.Calendar cal = java.util.Calendar.getInstance();
+                        cal.setTime(vr.getVaccineDate());
+                        cal.add(java.util.Calendar.YEAR, 1);
+                        vr.setNextDueDate(cal.getTime());
+                        
+                        vr.setNotes("通过服务登记自动同步: " + entity.getNotes());
+                        vaccineRecordService.save(vr);
+                    }
+                } catch (NumberFormatException e) {
+                    log.error("解析服务ID失败: {}", sIdStr);
                 }
-                healthRecordService.save(hr);
             }
         }
         return saved;

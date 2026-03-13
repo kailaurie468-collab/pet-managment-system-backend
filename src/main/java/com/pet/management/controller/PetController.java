@@ -33,21 +33,43 @@ public class PetController {
     }
 
     @GetMapping
-    public List<Pet> getAllPets() {
-        // 管理员可查看所有宠物
+    public List<Pet> getAllPets(
+            @RequestParam(required = false) String petName,
+            @RequestParam(required = false) String ownerName) {
         var auth = SecurityContextHolder.getContext().getAuthentication();
         boolean isAdmin = auth.getAuthorities().stream()
                 .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+        
+        LambdaQueryWrapper<Pet> queryWrapper = new LambdaQueryWrapper<>();
+        
+        // 1. 处理主人名搜索 (针对管理员或特定逻辑)
+        if (ownerName != null && !ownerName.isEmpty()) {
+            List<User> users = userMapper.selectList(new LambdaQueryWrapper<User>().like(User::getName, ownerName));
+            if (!users.isEmpty()) {
+                List<Long> ownerIds = users.stream().map(User::getId).collect(java.util.stream.Collectors.toList());
+                queryWrapper.in(Pet::getOwnerId, ownerIds);
+            } else {
+                return List.of(); // 搜不到主人，自然搜不到宠物
+            }
+        }
+
+        // 2. 处理宠物名搜索
+        if (petName != null && !petName.isEmpty()) {
+            queryWrapper.like(Pet::getName, petName);
+        }
+
+        // 3. 权限逻辑隔离
         if (isAdmin) {
-            return petService.list();
+            return petService.list(queryWrapper);
+        } else {
+            String username = auth.getName();
+            User currentUser = userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getUsername, username));
+            if (currentUser != null) {
+                queryWrapper.eq(Pet::getOwnerId, currentUser.getId());
+                return petService.list(queryWrapper);
+            }
+            return List.of();
         }
-        // 普通用户只能看到自己的宠物
-        String username = auth.getName();
-        User currentUser = userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getUsername, username));
-        if (currentUser != null) {
-            return petService.getPetsByOwnerId(currentUser.getId());
-        }
-        return List.of();
     }
 
     @GetMapping("/owner/{ownerId}")
